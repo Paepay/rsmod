@@ -237,7 +237,7 @@ constructor(
          *
          * If the request still has remaining retries, it will be re-queued for another attempt.
          */
-        private const val REQUEST_TIMEOUT_MS = 5000L
+        private const val REQUEST_TIMEOUT_MS = 15000L
 
         /**
          * Similar to [REQUEST_TIMEOUT_MS], but used during the [shutdown] process when attempting

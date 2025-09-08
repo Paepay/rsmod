@@ -5,6 +5,6 @@ import org.rsmod.content.areas.city.lumbridge.LumbridgeScript
 
 object LumbridgeNpcSpawns : MapNpcSpawnBuilder() {
     override fun onPackMapTask() {
-        resourceFile<LumbridgeScript>("npcs.toml")
+        // Disabled: global NPC spawns are provided by external module
     }
 }

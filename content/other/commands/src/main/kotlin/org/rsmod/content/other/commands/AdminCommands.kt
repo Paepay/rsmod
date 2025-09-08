@@ -34,6 +34,7 @@ import org.rsmod.game.loc.LocInfo
 import org.rsmod.game.loc.LocShape
 import org.rsmod.game.stat.PlayerSkillXPTable
 import org.rsmod.game.type.loc.LocTypeList
+import org.rsmod.game.type.mod.ModLevelTypeList
 import org.rsmod.game.type.npc.NpcTypeList
 import org.rsmod.game.type.obj.ObjTypeList
 import org.rsmod.game.type.seq.SeqTypeList
@@ -70,6 +71,7 @@ constructor(
     private val npcRepo: NpcRepository,
     private val names: NameMapping,
     private val update: GameUpdate,
+    private val modLevelTypes: ModLevelTypeList,
 ) : PluginScript() {
     private val logger = InlineLogger()
 
@@ -106,6 +108,13 @@ constructor(
         }
         onCommand("reboot", "Reboots the game world, applying packed changes", ::reboot)
         onCommand("slowreboot", "Reboots the game world, with a timer", ::slowReboot)
+        onCommand("searchitem", "Search for items by name", ::searchItem) {
+            invalidArgs = "Use as ::searchitem searchTerm (ex: godsword)"
+        }
+        onCommand("item", "Spawn item by ID", ::item) {
+            invalidArgs = "Use as ::item itemId [count] (ex: 995 1000)"
+        }
+        onCommand("maxmelee", "Spawn max melee gear set", ::maxMelee)
     }
 
     private fun master(cheat: Cheat) = with(cheat) { player.setStatLevels(level = 99) }
@@ -365,6 +374,123 @@ constructor(
             for (p in playerList) {
                 MiscOutput.updateRebootTimer(p, cycles)
             }
+        }
+
+    private fun searchItem(cheat: Cheat) =
+        with(cheat) {
+            if (args.isEmpty()) {
+                player.mes("You must provide a search term.")
+                return
+            }
+
+            val searchTerm = args.joinToString(" ").lowercase()
+            val matchingItems = mutableListOf<Pair<String, Int>>()
+
+            // Search through the name mapping for objects
+            for ((name, id) in names.objs) {
+                if (name.lowercase().contains(searchTerm)) {
+                    val objType = objTypes[id]
+                    if (objType != null) {
+                        val displayName = objType.name.ifEmpty { name }
+                        matchingItems.add(displayName to id)
+                    }
+                }
+            }
+
+            // Also search through actual item names in ObjTypeList
+            for ((id, objType) in objTypes.types) {
+                val itemName = objType.name.lowercase()
+                if (itemName.contains(searchTerm) && !matchingItems.any { it.second == id }) {
+                    matchingItems.add(objType.name to id)
+                }
+            }
+
+            if (matchingItems.isEmpty()) {
+                player.mes("No items found containing '$searchTerm'")
+                return
+            }
+
+            // Sort by name and limit to prevent spam
+            val sortedItems = matchingItems.sortedBy { it.first }.take(50)
+
+            player.mes("Found ${sortedItems.size} item(s) containing '$searchTerm':")
+            for ((name, id) in sortedItems) {
+                player.mes("  $name (ID: $id)")
+            }
+
+            if (matchingItems.size > 50) {
+                player.mes("... and ${matchingItems.size - 50} more. Refine your search.")
+            }
+        }
+
+    private fun item(cheat: Cheat) =
+        with(cheat) {
+            if (args.isEmpty()) {
+                player.mes("You must provide an item ID.")
+                return
+            }
+
+            val itemId = args[0].toIntOrNull()
+            if (itemId == null) {
+                player.mes("Invalid item ID: ${args[0]}")
+                return
+            }
+
+            val count =
+                if (args.size > 1) {
+                    args[1].toLongOrNull()?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: 1
+                } else {
+                    1
+                }
+
+            val objType = objTypes[itemId]
+            if (objType == null) {
+                player.mes("Item with ID $itemId does not exist.")
+                return
+            }
+
+            val spawned = player.invAdd(player.inv, objType, count, strict = false)
+            if (spawned.err is TransactionResult.RestrictedDummyitem) {
+                player.mes("You can't spawn this item!")
+                return
+            }
+
+            val itemName = objType.name.ifEmpty { "Item $itemId" }
+            player.mes(
+                "Spawned item '$itemName' (ID: $itemId) x ${spawned.completed().formatAmount}"
+            )
+        }
+
+    private fun maxMelee(cheat: Cheat) =
+        with(cheat) {
+            val ids =
+                intArrayOf(
+                    26382, // torva helm
+                    26384, // torva platebody
+                    26386, // torva platelegs
+                    29801, // amulet of rancour
+                    13239, // primordial boots
+                    22325, // scythe of vitur
+                    28307, // ultor ring
+                    22981, // ferocious gloves
+                    21295, // infernal cape
+                )
+
+            var success = 0
+            for (id in ids) {
+                val objType = objTypes[id]
+                if (objType == null) {
+                    player.mes("Item with ID $id does not exist.")
+                    continue
+                }
+                val spawned = player.invAdd(player.inv, objType, 1, strict = false)
+                if (spawned.err is TransactionResult.RestrictedDummyitem) {
+                    player.mes("You can't spawn this item (ID: $id)!")
+                    continue
+                }
+                success += 1
+            }
+            player.mes("Max melee gear spawned (${success} items).")
         }
 
     private fun resolveArgTypeId(arg: String, names: Map<String, Int>): Int? {
